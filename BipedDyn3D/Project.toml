@@ -1,0 +1,7 @@
+name = "BipedDyn3D"
+uuid = "6a5a4cd4-5587-472b-b65d-f6556ead921e"
+authors = ["Steven Man <sman2@andrew.cmu.edu>"]
+version = "0.1.0"
+
+[deps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
