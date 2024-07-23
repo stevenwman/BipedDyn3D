@@ -1,5 +1,5 @@
 function mom2vel(
-  mom::Vector, 
+  mom::Vector,
   params_rb::NamedTuple)
   """
   # Calculate velocity from momentum
@@ -13,12 +13,12 @@ function mom2vel(
   """
   m = params_rb.m
   J = params_rb.J
-  vel = [mom[1:3] / m; J \ mom[4:end]]
+  vel = [mom[1:3] / m; J \ mom[4:6]]
   return vel
 end
 
 function vel2mom(
-  vel::Vector, 
+  vel::Vector,
   params_rb::NamedTuple)
   """
   # Calculate momentum from velocity
@@ -32,12 +32,12 @@ function vel2mom(
   """
   m = params_rb.m
   J = params_rb.J
-  mom = [m * vel[1:3]; J * vel[4:end]]
+  mom = [m * vel[1:3]; J * vel[4:6]]
   return mom
 end
 
 function potential_energy(
-  state::Vector, 
+  state::Vector,
   params_rb::NamedTuple)
   """
   # Calculate potential energy of the body
@@ -58,9 +58,9 @@ end
 
 # left momentum term of the linear discrete euler lagrange equation
 function D2Ll(
-  state1::Vector, 
-  state2::Vector, 
-  h::Float64, 
+  state1::Vector,
+  state2::Vector,
+  h::Float64,
   params_rb::NamedTuple)
   """
   # Calculate left momentum term of the discrete euler lagrange equation
@@ -85,9 +85,9 @@ end
 
 # right momentum term of the linear discrete euler lagrange equation
 function D1Ll(
-  state1::Vector, 
-  state2::Vector, 
-  h::Float64, 
+  state1::Vector,
+  state2::Vector,
+  h::Float64,
   params_rb::NamedTuple)
   """
   # Calculate right momentum term of the discrete euler lagrange equation
@@ -139,9 +139,9 @@ function linear_momentum_DEL(
 end
 
 function D2Lr(
-  state1::Vector, 
-  state2::Vector, 
-  h::Float64, 
+  state1::Vector,
+  state2::Vector,
+  h::Float64,
   params_rb::NamedTuple)
   """
   # Calculate left momentum term of the discrete euler lagrange equation
@@ -163,9 +163,9 @@ function D2Lr(
 end
 
 function D1Lr(
-  state1::Vector, 
-  state2::Vector, 
-  h::Float64, 
+  state1::Vector,
+  state2::Vector,
+  h::Float64,
   params_rb::NamedTuple)
   """
   # Calculate right momentum term of the discrete euler lagrange equation
@@ -284,13 +284,13 @@ function complete_DEL_jacobian(
   - `complete_jacobian`: jacobian of the discrete Lagrangian of the system using midpoint integration
   """
   vanilla_jacobian = FD.jacobian(s2 -> complete_DEL(momenta1, states1, s2, forcing1, forcing2, params_rbs, h), states2)
-  Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)
+  Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)  
   complete_jacobian = vanilla_jacobian * Ḡ
   return complete_jacobian
 end
 
 function attitude_jacobian_block_matrix(
-  states::Matrix, 
+  states::Matrix,
   params_rbs::Vector{<:NamedTuple})
   """
   # Generate attitude jacobian block matrix for the system
@@ -316,13 +316,13 @@ end
 # TODO: add constraint terms
 
 function integrator_step(
-  momenta1::Matrix, 
-  states1::Matrix, 
-  forcing1::Matrix, 
-  forcing2::Matrix, 
-  params_rbs::Vector{<:NamedTuple}, 
-  h::Float64; 
-  tol=1e-6, 
+  momenta1::Matrix,
+  states1::Matrix,
+  forcing1::Matrix,
+  forcing2::Matrix,
+  params_rbs::Vector{<:NamedTuple},
+  h::Float64;
+  tol=1e-6,
   max_iters=100)
   """
   # Integrate the system by doing Newton root-finding on the discrete euler lagrange equations
@@ -342,10 +342,10 @@ function integrator_step(
   - `momenta2`: Matrix containing momenta of the system at time t + h
   """
   states2 = states1 # initial guess
-  residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
   bodies = length(params_rbs)
 
   for _ in 1:max_iters
+    residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
     if norm(residual) < tol
       momenta2 = 0 * momenta1 # initialize momenta2
       for j in 1:bodies
@@ -356,14 +356,20 @@ function integrator_step(
       end
       return states2, momenta2
     end
-    DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
-    # wrapping in real helped fixed some random matrix solve error
-    Δstates = -real(DEL_jacobian) \ real(residual)
-    # TODO: fix so generalizable to multiple bodies
-    δ, ϕ = Δstates[1:3], Δstates[4:6]
-    states2[1:3] .= states2[1:3] + δ
-    states2[4:7] .= L(states2[4:7]) * [sqrt(1 - ϕ' * ϕ); ϕ]
-    residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
+
+    DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, params_rbs, h) 
+    Δstates = -real(DEL_jacobian) \ real(residual) # wrapping in real helped with linear solver issue ??
+    Δstates = reshape(Δstates, 6, bodies)
+
+    new_states = 0 * states2 # why do I need another variable to hold state2 ??
+    for k in 1:bodies
+      δ, ϕ = Δstates[1:3, k], Δstates[4:6, k]
+      linear_state2 = states2[1:3, k] + δ
+      rotation_state2 = L(states2[4:7, k]) * [sqrt(1 - ϕ' * ϕ); ϕ]
+      new_states[:,k] .= [linear_state2; rotation_state2]
+    end
+
+    states2 = new_states
   end
   throw("Integration did not converge")
 end
