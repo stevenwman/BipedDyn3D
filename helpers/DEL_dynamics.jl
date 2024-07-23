@@ -1,4 +1,6 @@
-function mom2vel(mom::Vector, params_rb::NamedTuple)
+function mom2vel(
+  mom::Vector, 
+  params_rb::NamedTuple)
   """
   # Calculate velocity from momentum
 
@@ -15,7 +17,9 @@ function mom2vel(mom::Vector, params_rb::NamedTuple)
   return vel
 end
 
-function vel2mom(vel::Vector, params_rb::NamedTuple)
+function vel2mom(
+  vel::Vector, 
+  params_rb::NamedTuple)
   """
   # Calculate momentum from velocity
 
@@ -32,7 +36,9 @@ function vel2mom(vel::Vector, params_rb::NamedTuple)
   return mom
 end
 
-function potential_energy(state::Vector, params_rb::NamedTuple)
+function potential_energy(
+  state::Vector, 
+  params_rb::NamedTuple)
   """
   # Calculate potential energy of the body
 
@@ -51,7 +57,11 @@ function potential_energy(state::Vector, params_rb::NamedTuple)
 end
 
 # left momentum term of the linear discrete euler lagrange equation
-function D2Ll(state1::Vector, state2::Vector, h::Float64, params_rb::NamedTuple)
+function D2Ll(
+  state1::Vector, 
+  state2::Vector, 
+  h::Float64, 
+  params_rb::NamedTuple)
   """
   # Calculate left momentum term of the discrete euler lagrange equation
 
@@ -74,7 +84,11 @@ function D2Ll(state1::Vector, state2::Vector, h::Float64, params_rb::NamedTuple)
 end
 
 # right momentum term of the linear discrete euler lagrange equation
-function D1Ll(state1::Vector, state2::Vector, h::Float64, params_rb::NamedTuple)
+function D1Ll(
+  state1::Vector, 
+  state2::Vector, 
+  h::Float64, 
+  params_rb::NamedTuple)
   """
   # Calculate right momentum term of the discrete euler lagrange equation
 
@@ -124,7 +138,11 @@ function linear_momentum_DEL(
   return lm_DEL
 end
 
-function D2Lr(state1::Vector, state2::Vector, h::Float64, params_rb::NamedTuple)
+function D2Lr(
+  state1::Vector, 
+  state2::Vector, 
+  h::Float64, 
+  params_rb::NamedTuple)
   """
   # Calculate left momentum term of the discrete euler lagrange equation
 
@@ -144,7 +162,11 @@ function D2Lr(state1::Vector, state2::Vector, h::Float64, params_rb::NamedTuple)
   return l⁺
 end
 
-function D1Lr(state1::Vector, state2::Vector, h::Float64, params_rb::NamedTuple)
+function D1Lr(
+  state1::Vector, 
+  state2::Vector, 
+  h::Float64, 
+  params_rb::NamedTuple)
   """
   # Calculate right momentum term of the discrete euler lagrange equation
 
@@ -267,7 +289,9 @@ function complete_DEL_jacobian(
   return complete_jacobian
 end
 
-function attitude_jacobian_block_matrix(states::Matrix, params_rbs::Vector{<:NamedTuple})
+function attitude_jacobian_block_matrix(
+  states::Matrix, 
+  params_rbs::Vector{<:NamedTuple})
   """
   # Generate attitude jacobian block matrix for the system
 
@@ -321,7 +345,7 @@ function integrator_step(
   residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
   bodies = length(params_rbs)
 
-  for i in 1:max_iters
+  for _ in 1:max_iters
     if norm(residual) < tol
       momenta2 = 0 * momenta1 # initialize momenta2
       for j in 1:bodies
@@ -336,8 +360,8 @@ function integrator_step(
     # wrapping in real helped fixed some random matrix solve error
     Δstates = -real(DEL_jacobian) \ real(residual)
     # TODO: fix so generalizable to multiple bodies
-    states2[1:3] .= states2[1:3] + Δstates[1:3]
-    ϕ = Δstates[4:6]
+    δ, ϕ = Δstates[1:3], Δstates[4:6]
+    states2[1:3] .= states2[1:3] + δ
     states2[4:7] .= L(states2[4:7]) * [sqrt(1 - ϕ' * ϕ); ϕ]
     residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
   end
