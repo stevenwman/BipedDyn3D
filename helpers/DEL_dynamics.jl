@@ -350,7 +350,7 @@ function integrator_step(
       momenta2 = 0 * momenta1 # initialize momenta2
       for j in 1:bodies
         # calculate momenta at t + h
-        momenta2[:, j] = [
+        momenta2[:, j] .= [
           D2Ll(states1[:, j], states2[:, j], h, params_rbs[j]);
           D2Lr(states1[:, j], states2[:, j], h, params_rbs[j])]
       end
@@ -363,9 +363,10 @@ function integrator_step(
 
     new_states = 0 * states2 # why do I need another variable to hold state2 ??
     for k in 1:bodies
-      δ, ϕ = Δstates[1:3, k], Δstates[4:6, k]
+      δ, ϕ = Δstates[1:3, k], Δstates[4:6, k] # linear and rotational Newton steps
       linear_state2 = states2[1:3, k] + δ
       rotation_state2 = L(states2[4:7, k]) * [sqrt(1 - ϕ' * ϕ); ϕ]
+      rotation_state2 = rotation_state2 / norm(rotation_state2)
       new_states[:,k] .= [linear_state2; rotation_state2]
     end
 
