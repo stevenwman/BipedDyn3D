@@ -138,85 +138,52 @@ function linear_momentum_DEL(
   return lm_DEL
 end
 
-function D2Lr(
-  state1::Vector,
-  state2::Vector,
-  h::Float64,
-  params_rb::NamedTuple)
-  """
-  # Calculate left momentum term of the discrete euler lagrange equation
-
-  # Arguments
-  - `state1`: Vector containing states of the body at time tₖ
-  - `state2`: Vector containing states of the body at time tₖ + h
-  - `h`: time step
-  - `params_rb`: NamedTuple containing rigidbody parameters
-
-  # Returns
-  - `l⁺`: left momentum term
-  """
-  Q1, Q2 = state1[4:7], state2[4:7]
-  J = params_rb.J
-  # calculate the right momentum term
-  l⁺ = (2.0/h) * G(Q2)' * L(Q1) * H * J * H' * L(Q1)' * Q2
-  return l⁺
-end
-
-function D1Lr(
-  state1::Vector,
-  state2::Vector,
-  h::Float64,
-  params_rb::NamedTuple)
-  """
-  # Calculate right momentum term of the discrete euler lagrange equation
-
-  # Arguments
-  - `state1`: Vector containing states of the body at time t
-  - `state2`: Vector containing states of the body at time t + h
-  - `h`: time step
-  - `params_rb`: NamedTuple containing rigidbody parameters
-
-  # Returns
-  - `_l⁻`: negative of the right momentum term
-  """
-  Q1, Q2 = state1[4:7], state2[4:7]
-  J = params_rb.J
-  # calculate the right momentum term
-  _l⁻ = (2.0/h) * (G(Q1)' * T * R(Q2)' * H * J * H' * L(Q1)' * Q2) # negative of right momentum term
-  return _l⁻
-end
-
-# function rotational_momentum_DEL(
-#   momentum1::Vector,
+# function D2Lr(
 #   state1::Vector,
 #   state2::Vector,
-#   torque1::Vector,
-#   torque2::Vector,
-#   params_rb::NamedTuple,
-#   h::Float64)
+#   h::Float64,
+#   params_rb::NamedTuple)
 #   """
-#   # Calculate discrete Lagrangian of the body
+#   # Calculate left momentum term of the discrete euler lagrange equation
 
 #   # Arguments
-#   - `momentum1`: Vector containing momentum of the body at time t
-#   - `state1`: Vector containing states of the body at time t
-#   - `state2`: Vector containing states of the body at time t + h
-#   - `torque1`: Vector containing torques at time t - h/2
-#   - `torque2`: Vector containing torques at time t + h/2
-#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `state1`: Vector containing states of the body at time tₖ
+#   - `state2`: Vector containing states of the body at time tₖ + h
 #   - `h`: time step
+#   - `params_rb`: NamedTuple containing rigidbody parameters
 
 #   # Returns
-#   - `rm_DEL`: residual of the discrete Lagrangian of the body using midpoint integration
+#   - `l⁺`: left momentum term
 #   """
-#   # calculate the discrete lagrangian
-#   velocity1 = mom2vel(momentum1, params_rb)
-#   ω1 = velocity1[4:6]
-#   attitude1 = state1[4:7]
-#   attitude_mid = L(attitude1) * [1; (h/2) * ω1]
-#   state_mid = [state1[1:3]; attitude_mid]
-#   rm_DEL = D2Lr(state1, state_mid, h, params_rb) + D1Lr(state_mid, state2, h, params_rb) + (h / 2) * (torque1 + torque2)
-#   return rm_DEL
+#   Q1, Q2 = state1[4:7], state2[4:7]
+#   J = params_rb.J
+#   # calculate the right momentum term
+#   l⁺ = (2.0/h) * G(Q2)' * L(Q1) * H * J * H' * L(Q1)' * Q2
+#   return l⁺
+# end
+
+# function D1Lr(
+#   state1::Vector,
+#   state2::Vector,
+#   h::Float64,
+#   params_rb::NamedTuple)
+#   """
+#   # Calculate right momentum term of the discrete euler lagrange equation
+
+#   # Arguments
+#   - `state1`: Vector containing states of the body at time t
+#   - `state2`: Vector containing states of the body at time t + h
+#   - `h`: time step
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+
+#   # Returns
+#   - `_l⁻`: negative of the right momentum term
+#   """
+#   Q1, Q2 = state1[4:7], state2[4:7]
+#   J = params_rb.J
+#   # calculate the right momentum term
+#   _l⁻ = (2.0/h) * (G(Q1)' * T * R(Q2)' * H * J * H' * L(Q1)' * Q2) # negative of right momentum term
+#   return _l⁻
 # end
 
 function rotational_momentum_DEL(
@@ -247,9 +214,9 @@ function rotational_momentum_DEL(
   velocity1 = mom2vel(momentum1, params_rb)
   ω1 = velocity1[4:6]
   Q1 = state1[4:7]
-  Q2 = L(Q1) * [1; (h / 2) * ω1]
+  Q2 = L(Q1) * [1; (h/2.0) * ω1]
   Q3 = state2[4:7]
-  rm_DEL =  G(Q2)' * H * J * (2 / h) * (H' * L(Q2)' * Q3) + (h / 2) * (torque1 + torque2)
+  rm_DEL =  (2.0/h) * G(Q2)' * H * J * (G(Q2)' * Q3) + (h/2.0) * (torque1 + torque2)
   return rm_DEL
 end
 
@@ -273,9 +240,39 @@ function angular_momentum_update(
   Q1, Q2 = state1[4:7], state2[4:7]
   J = params_rb.J
   # calculate the updated angular momentum between 2 knot points
-  angular_momentum = (2 / h) * J * H' * L(Q1)' * Q2 
+  angular_momentum = (2.0/h) * J * H' * L(Q1)' * Q2 
   return angular_momentum
 end
+
+# function angular_momentum_update(
+#   momentum1::Vector,
+#   state1::Vector, 
+#   state2::Vector, 
+#   h::Float64, 
+#   params_rb::NamedTuple)
+#   """
+#   # Calculate the updated angular momentum
+
+#   # Arguments
+#   - `state1`: Vector containing states of the body at time t
+#   - `state2`: Vector containing states of the body at time t + h
+#   - `h`: time step
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+
+#   # Returns
+#   - `angular_momentum`: updated angular momentum
+#   """
+#   J = params_rb.J
+#   velocity1 = mom2vel(momentum1, params_rb)
+#   ω1 = velocity1[4:6]
+#   Q1 = state1[4:7]
+#   Q2 = normalize(L(Q1) * [1; (h/2.0) * ω1])
+#   Q3 = state2[4:7]
+
+#   # calculate the updated angular momentum between 2 knot points
+#   angular_momentum = (2.0/h) * J * H' * L(Q2)' * Q3
+#   return angular_momentum
+# end
 
 function complete_DEL(
   momenta1::Matrix,
@@ -428,7 +425,7 @@ function integrator_step(
     for k in 1:bodies
       δ, ϕ = Δstates[1:3, k], Δstates[4:6, k] # linear and rotational Newton steps
       linear_state2 = states2[1:3, k] + δ
-      rotation_state2 = L(states2[4:7, k]) * [sqrt(1 - ϕ' * ϕ); ϕ]
+      rotation_state2 = L(states2[4:7, k]) * [sqrt(1 - ϕ' * ϕ); ϕ] # quaternion update using axis angle newton step
       new_states[:, k] .= [linear_state2; normalize(rotation_state2)]
     end
 
