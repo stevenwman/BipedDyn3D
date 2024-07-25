@@ -186,6 +186,39 @@ function D1Lr(
   return _l⁻
 end
 
+# function rotational_momentum_DEL(
+#   momentum1::Vector,
+#   state1::Vector,
+#   state2::Vector,
+#   torque1::Vector,
+#   torque2::Vector,
+#   params_rb::NamedTuple,
+#   h::Float64)
+#   """
+#   # Calculate discrete Lagrangian of the body
+
+#   # Arguments
+#   - `momentum1`: Vector containing momentum of the body at time t
+#   - `state1`: Vector containing states of the body at time t
+#   - `state2`: Vector containing states of the body at time t + h
+#   - `torque1`: Vector containing torques at time t - h/2
+#   - `torque2`: Vector containing torques at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+
+#   # Returns
+#   - `rm_DEL`: residual of the discrete Lagrangian of the body using midpoint integration
+#   """
+#   # calculate the discrete lagrangian
+#   velocity1 = mom2vel(momentum1, params_rb)
+#   ω1 = velocity1[4:6]
+#   attitude1 = state1[4:7]
+#   attitude_mid = L(attitude1) * [1; (h/2) * ω1]
+#   state_mid = [state1[1:3]; attitude_mid]
+#   rm_DEL = D2Lr(state1, state_mid, h, params_rb) + D1Lr(state_mid, state2, h, params_rb) + (h / 2) * (torque1 + torque2)
+#   return rm_DEL
+# end
+
 function rotational_momentum_DEL(
   momentum1::Vector,
   state1::Vector,
@@ -210,12 +243,13 @@ function rotational_momentum_DEL(
   - `rm_DEL`: residual of the discrete Lagrangian of the body using midpoint integration
   """
   # calculate the discrete lagrangian
+  J = params_rb.J
   velocity1 = mom2vel(momentum1, params_rb)
   ω1 = velocity1[4:6]
-  attitude1 = state1[4:7]
-  attitude_mid = L(attitude1) * [1; (h/2) * ω1]
-  state_mid = [state1[1:3]; attitude_mid]
-  rm_DEL = D2Lr(state1, state_mid, h, params_rb) + D1Lr(state_mid, state2, h, params_rb) + (h / 2) * (torque1 + torque2)
+  Q1 = state1[4:7]
+  Q2 = L(Q1) * [1; (h / 2) * ω1]
+  Q3 = state2[4:7]
+  rm_DEL =  G(Q2)' * H * J * (2 / h) * (H' * L(Q2)' * Q3) + (h / 2) * (torque1 + torque2)
   return rm_DEL
 end
 
@@ -239,7 +273,7 @@ function angular_momentum_update(
   Q1, Q2 = state1[4:7], state2[4:7]
   J = params_rb.J
   # calculate the updated angular momentum between 2 knot points
-  angular_momentum = (1/h) * J * H' * L(Q1)' * Q2 # TODO: check if 2/h is correct
+  angular_momentum = (2 / h) * J * H' * L(Q1)' * Q2 
   return angular_momentum
 end
 
@@ -373,14 +407,8 @@ function integrator_step(
   bodies = length(params_rbs)
 
   for i in 1:max_iters
-
-    @show i
-    @show momenta1
-
     residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
-
-    @show residual
-
+    
     if norm(residual) < tol
       momenta2 = 0 * momenta1 # initialize momenta2
       for j in 1:bodies
