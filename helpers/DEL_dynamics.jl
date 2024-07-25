@@ -158,7 +158,7 @@ function D2Lr(
   Q1, Q2 = state1[4:7], state2[4:7]
   J = params_rb.J
   # calculate the right momentum term
-  l⁺ = 2 / h * G(Q2)' * L(Q1) * H * J * H' * L(Q1)' * Q2
+  l⁺ = (2.0/h) * G(Q2)' * L(Q1) * H * J * H' * L(Q1)' * Q2
   return l⁺
 end
 
@@ -182,7 +182,7 @@ function D1Lr(
   Q1, Q2 = state1[4:7], state2[4:7]
   J = params_rb.J
   # calculate the right momentum term
-  _l⁻ = 2 / h * (G(Q1)' * T * R(Q2)' * H * J * H' * L(Q1)' * Q2) # negative of right momentum term
+  _l⁻ = (2.0/h) * (G(Q1)' * T * R(Q2)' * H * J * H' * L(Q1)' * Q2) # negative of right momentum term
   return _l⁻
 end
 
@@ -210,9 +210,37 @@ function rotational_momentum_DEL(
   - `rm_DEL`: residual of the discrete Lagrangian of the body using midpoint integration
   """
   # calculate the discrete lagrangian
-  angular_momentum = momentum1[4:6]
-  rm_DEL = angular_momentum + D1Lr(state1, state2, h, params_rb) + (h / 2) * (torque1 + torque2)
+  velocity1 = mom2vel(momentum1, params_rb)
+  ω1 = velocity1[4:6]
+  attitude1 = state1[4:7]
+  attitude_mid = L(attitude1) * [1; (h/2) * ω1]
+  state_mid = [state1[1:3]; attitude_mid]
+  rm_DEL = D2Lr(state1, state_mid, h, params_rb) + D1Lr(state_mid, state2, h, params_rb) + (h / 2) * (torque1 + torque2)
   return rm_DEL
+end
+
+function angular_momentum_update(
+  state1::Vector, 
+  state2::Vector, 
+  h::Float64, 
+  params_rb::NamedTuple)
+  """
+  # Calculate the updated angular momentum
+
+  # Arguments
+  - `state1`: Vector containing states of the body at time t
+  - `state2`: Vector containing states of the body at time t + h
+  - `h`: time step
+  - `params_rb`: NamedTuple containing rigidbody parameters
+
+  # Returns
+  - `angular_momentum`: updated angular momentum
+  """
+  Q1, Q2 = state1[4:7], state2[4:7]
+  J = params_rb.J
+  # calculate the updated angular momentum between 2 knot points
+  angular_momentum = (1/h) * J * H' * L(Q1)' * Q2 # TODO: check if 2/h is correct
+  return angular_momentum
 end
 
 function complete_DEL(
@@ -284,7 +312,7 @@ function complete_DEL_jacobian(
   - `complete_jacobian`: jacobian of the discrete Lagrangian of the system using midpoint integration
   """
   vanilla_jacobian = FD.jacobian(s2 -> complete_DEL(momenta1, states1, s2, forcing1, forcing2, params_rbs, h), states2)
-  Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)  
+  Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)
   complete_jacobian = vanilla_jacobian * Ḡ
   return complete_jacobian
 end
@@ -344,20 +372,27 @@ function integrator_step(
   states2 = states1 # initial guess
   bodies = length(params_rbs)
 
-  for _ in 1:max_iters
+  for i in 1:max_iters
+
+    @show i
+    @show momenta1
+
     residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
+
+    @show residual
+
     if norm(residual) < tol
       momenta2 = 0 * momenta1 # initialize momenta2
       for j in 1:bodies
         # calculate momenta at t + h
         momenta2[:, j] .= [
           D2Ll(states1[:, j], states2[:, j], h, params_rbs[j]);
-          D2Lr(states1[:, j], states2[:, j], h, params_rbs[j])]
+          angular_momentum_update(states1[:, j], states2[:, j], h, params_rbs[j])]
       end
       return states2, momenta2
     end
 
-    DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, params_rbs, h) 
+    DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
     Δstates = -real(DEL_jacobian) \ real(residual) # wrapping in real helped with linear solver issue ??
     Δstates = reshape(Δstates, 6, bodies)
 
@@ -366,8 +401,7 @@ function integrator_step(
       δ, ϕ = Δstates[1:3, k], Δstates[4:6, k] # linear and rotational Newton steps
       linear_state2 = states2[1:3, k] + δ
       rotation_state2 = L(states2[4:7, k]) * [sqrt(1 - ϕ' * ϕ); ϕ]
-      rotation_state2 = rotation_state2 / norm(rotation_state2)
-      new_states[:,k] .= [linear_state2; rotation_state2]
+      new_states[:, k] .= [linear_state2; normalize(rotation_state2)]
     end
 
     states2 = new_states
