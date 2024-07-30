@@ -16,7 +16,7 @@ function R(Q::Vector)::Matrix
   # right multiply matrix of quaternion Q
   s = Q[1] # scalar part
   v = Q[2:end] # vector part
-  return [s -v'; v hat(v)-s*I]
+  return [s -v'; v s*I-hat(v)]
 end
 
 H = [zeros(1, 3); I]; # hat map for vectors
@@ -30,5 +30,5 @@ end
 
 function quat2rot(Q::Vector)::Matrix
   # convert quaternion to rotation matrix
-  return H' * L(Q) * R(Q) * H
+  return H' * L(Q) * R(Q)' * H
 end
