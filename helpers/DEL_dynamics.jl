@@ -110,12 +110,38 @@ function D1Ll(
   return _p⁻
 end
 
+# function linear_momentum_DEL(
+#   momentum1::Vector,
+#   state1::Vector,
+#   state2::Vector,
+#   cg_force1::Vector,
+#   cg_force2::Vector,
+#   params_rb::NamedTuple,
+#   h::Float64)
+#   """
+#   # Calculate discrete Lagrangian of the body
+
+#   # Arguments
+#   - `momentum1`: Vector containing momentum of the body at time t
+#   - `state1`: Vector containing states of the body at time t
+#   - `state2`: Vector containing states of the body at time t + h
+#   - `cg_force1`: Vector containing forcing terms at time t - h/2
+#   - `cg_force2`: Vector containing forcing terms at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+
+#   # Returns
+#   - `lm_DEL`: residual of the discrete linear momentum Lagrangian of the body using midpoint integration
+#   """
+#   linear_momentum = momentum1[1:3]
+#   lm_DEL = linear_momentum + D1Ll(state1, state2, h, params_rb) + h/2 * (cg_force1 + cg_force2)
+#   return lm_DEL
+# end
+
 function linear_momentum_DEL(
   momentum1::Vector,
   state1::Vector,
   state2::Vector,
-  cg_force1::Vector,
-  cg_force2::Vector,
   params_rb::NamedTuple,
   h::Float64)
   """
@@ -134,9 +160,10 @@ function linear_momentum_DEL(
   - `lm_DEL`: residual of the discrete linear momentum Lagrangian of the body using midpoint integration
   """
   linear_momentum = momentum1[1:3]
-  lm_DEL = linear_momentum + D1Ll(state1, state2, h, params_rb) + h / 2 * (cg_force1 + cg_force2)
+  lm_DEL = linear_momentum + D1Ll(state1, state2, h, params_rb)
   return lm_DEL
 end
+
 
 function D2Lr(
   state1::Vector,
@@ -186,12 +213,41 @@ function D1Lr(
   return _l⁻
 end
 
+# function rotational_momentum_DEL(
+#   momentum1::Vector,
+#   state1::Vector,
+#   state2::Vector,
+#   torque1::Vector,
+#   torque2::Vector,
+#   params_rb::NamedTuple,
+#   h::Float64)
+#   """
+#   # Calculate discrete Lagrangian of the body
+
+#   # Arguments
+#   - `momentum1`: Vector containing momentum of the body at time t
+#   - `state1`: Vector containing states of the body at time t
+#   - `state2`: Vector containing states of the body at time t + h
+#   - `torque1`: Vector containing torques at time t - h/2
+#   - `torque2`: Vector containing torques at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+
+#   # Returns
+#   - `rm_DEL`: residual of the discrete Lagrangian of the body using midpoint integration
+#   """
+#   # calculate the discrete lagrangian
+#   J = params_rb.J
+#   velocity1 = mom2vel(momentum1, params_rb)
+#   ω1 = velocity1[4:6]
+#   rm_DEL = J*ω1 + D1Lr(state1, state2, h, params_rb) + h / 2 * (torque1 + torque2)
+#   return rm_DEL
+# end
+
 function rotational_momentum_DEL(
   momentum1::Vector,
   state1::Vector,
   state2::Vector,
-  torque1::Vector,
-  torque2::Vector,
   params_rb::NamedTuple,
   h::Float64)
   """
@@ -213,66 +269,53 @@ function rotational_momentum_DEL(
   J = params_rb.J
   velocity1 = mom2vel(momentum1, params_rb)
   ω1 = velocity1[4:6]
-  # Q1 = state1[4:7]
-  # Q2 = L(Q1) * [1; (h/2.0) * ω1]
-  # Q3 = state2[4:7]
-  # rm_DEL =  (2.0/h) * G(Q2)' * H * J * (G(Q2)' * Q3) + (h/2.0) * (torque1 + torque2)
-  rm_DEL = J*ω1 + D1Lr(state1, state2, h, params_rb) + h / 2 * (torque1 + torque2)
+  rm_DEL = J*ω1 + D1Lr(state1, state2, h, params_rb)
   return rm_DEL
 end
 
-# function angular_momentum_update(
-#   state1::Vector, 
-#   state2::Vector, 
-#   h::Float64, 
-#   params_rb::NamedTuple)
+# function complete_DEL(
+#   momenta1::Matrix,
+#   states1::Matrix,
+#   states2::Matrix,
+#   forcing1::Matrix,
+#   forcing2::Matrix,
+#   params_rbs::Vector{<:NamedTuple},
+#   h::Float64)
 #   """
-#   # Calculate the updated angular momentum
+#   # Calculate discrete Lagrangian of the system
 
 #   # Arguments
-#   - `state1`: Vector containing states of the body at time t
-#   - `state2`: Vector containing states of the body at time t + h
-#   - `h`: time step
+#   - `momenta1`: Matrix containing momenta of the system at time t (each column is a rigidbody)
+#   - `state1`: Matrix containing states of the system at time t
+#   - `state2`: Matrix containing states of the system at time t + h
+#   - `forcing1`: Matrix containing forcing (Fx,Fy,Fz,τx,τy,τz) terms at time t - h/2 
+#   - `forcing2`: Matrix containing forcing terms at time t + h/2
 #   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
 
 #   # Returns
-#   - `angular_momentum`: updated angular momentum
+#   - `DEL`: residual of the discrete Lagrangian of the system using midpoint integration
 #   """
-#   Q1, Q2 = state1[4:7], state2[4:7]
-#   J = params_rb.J
-#   # calculate the updated angular momentum between 2 knot points
-#   angular_momentum = (2.0/h) * J * H' * L(Q1)' * Q2 
-#   return angular_momentum
-# end
-
-# function angular_momentum_update(
-#   momentum1::Vector,
-#   state1::Vector, 
-#   state2::Vector, 
-#   h::Float64, 
-#   params_rb::NamedTuple)
-#   """
-#   # Calculate the updated angular momentum
-
-#   # Arguments
-#   - `state1`: Vector containing states of the body at time t
-#   - `state2`: Vector containing states of the body at time t + h
-#   - `h`: time step
-#   - `params_rb`: NamedTuple containing rigidbody parameters
-
-#   # Returns
-#   - `angular_momentum`: updated angular momentum
-#   """
-#   J = params_rb.J
-#   velocity1 = mom2vel(momentum1, params_rb)
-#   ω1 = velocity1[4:6]
-#   Q1 = state1[4:7]
-#   Q2 = normalize(L(Q1) * [1; (h/2.0) * ω1])
-#   Q3 = state2[4:7]
-
-#   # calculate the updated angular momentum between 2 knot points
-#   angular_momentum = (2.0/h) * J * H' * L(Q2)' * Q3
-#   return angular_momentum
+#   DEL = []
+#   for i in 1:size(momenta1, 2)
+#     append!(DEL, linear_momentum_DEL(
+#       momenta1[:, i],
+#       states1[:, i],
+#       states2[:, i],
+#       forcing1[1:3, i],
+#       forcing2[1:3, i],
+#       params_rbs[i],
+#       h))
+#     append!(DEL, rotational_momentum_DEL(
+#       momenta1[:, i],
+#       states1[:, i],
+#       states2[:, i],
+#       forcing1[4:6, i],
+#       forcing2[4:6, i],
+#       params_rbs[i],
+#       h))
+#   end
+#   return DEL
 # end
 
 function complete_DEL(
@@ -300,25 +343,43 @@ function complete_DEL(
   """
   DEL = []
   for i in 1:size(momenta1, 2)
-    append!(DEL, linear_momentum_DEL(
-      momenta1[:, i],
-      states1[:, i],
-      states2[:, i],
-      forcing1[1:3, i],
-      forcing2[1:3, i],
-      params_rbs[i],
-      h))
-    append!(DEL, rotational_momentum_DEL(
-      momenta1[:, i],
-      states1[:, i],
-      states2[:, i],
-      forcing1[4:6, i],
-      forcing2[4:6, i],
-      params_rbs[i],
-      h))
+    append!(DEL, linear_momentum_DEL(momenta1[:, i],states1[:, i],states2[:, i],params_rbs[i],h))
+    append!(DEL, rotational_momentum_DEL(momenta1[:, i], states1[:, i], states2[:, i], params_rbs[i], h))
   end
+
+  DEL += (h/2) * (vcat(forcing1...) + vcat(forcing2...)) # add forcing terms
+
   return DEL
 end
+
+# function complete_DEL_jacobian(
+#   momenta1::Matrix,
+#   states1::Matrix,
+#   states2::Matrix,
+#   forcing1::Matrix,
+#   forcing2::Matrix,
+#   params_rbs::Vector{<:NamedTuple},
+#   h::Float64)
+#   """
+#   # Calculate jacobian of the discrete Lagrangian of the system
+
+#   # Arguments
+#   - `momenta1`: Matrix containing momenta of the system at time t (each column is a rigidbody)
+#   - `state1`: Matrix containing states of the system at time t
+#   - `state2`: Matrix containing states of the system at time t + h
+#   - `forcing1`: Matrix containing forcing (Fx,Fy,Fz,τx,τy,τz) terms at time t - h/2
+#   - `forcing2`: Matrix containing forcing terms at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+
+#   # Returns
+#   - `complete_jacobian`: jacobian of the discrete Lagrangian of the system using midpoint integration
+#   """
+#   vanilla_jacobian = FD.jacobian(s2 -> complete_DEL(momenta1, states1, s2, forcing1, forcing2, params_rbs, h), states2)
+#   Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)
+#   complete_jacobian = vanilla_jacobian * Ḡ
+#   return complete_jacobian
+# end
 
 function complete_DEL_jacobian(
   momenta1::Matrix,
