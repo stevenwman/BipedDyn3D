@@ -164,7 +164,6 @@ function linear_momentum_DEL(
   return lm_DEL
 end
 
-
 function D2Lr(
   state1::Vector,
   state2::Vector,
@@ -185,7 +184,7 @@ function D2Lr(
   Q1, Q2 = state1[4:7], state2[4:7]
   J = params_rb.J
   # calculate the right momentum term
-  l⁺ = (2.0/h) * G(Q2)' * L(Q1) * H * J * H' * L(Q1)' * Q2
+  l⁺ = (2.0 / h) * G(Q2)' * L(Q1) * H * J * H' * L(Q1)' * Q2
   return l⁺
 end
 
@@ -209,7 +208,7 @@ function D1Lr(
   Q1, Q2 = state1[4:7], state2[4:7]
   J = params_rb.J
   # calculate the right momentum term
-  _l⁻ = (2.0/h) * (G(Q1)' * T * R(Q2)' * H * J * H' * L(Q1)' * Q2) # negative of right momentum term
+  _l⁻ = (2.0 / h) * (G(Q1)' * T * R(Q2)' * H * J * H' * L(Q1)' * Q2) # negative of right momentum term
   return _l⁻
 end
 
@@ -269,7 +268,7 @@ function rotational_momentum_DEL(
   J = params_rb.J
   velocity1 = mom2vel(momentum1, params_rb)
   ω1 = velocity1[4:6]
-  rm_DEL = J*ω1 + D1Lr(state1, state2, h, params_rb)
+  rm_DEL = J * ω1 + D1Lr(state1, state2, h, params_rb)
   return rm_DEL
 end
 
@@ -324,6 +323,7 @@ function complete_DEL(
   states2::Matrix,
   forcing1::Matrix,
   forcing2::Matrix,
+  λ::Vector,
   params_rbs::Vector{<:NamedTuple},
   h::Float64)
   """
@@ -343,12 +343,12 @@ function complete_DEL(
   """
   DEL = []
   for i in 1:size(momenta1, 2)
-    append!(DEL, linear_momentum_DEL(momenta1[:, i],states1[:, i],states2[:, i],params_rbs[i],h))
+    append!(DEL, linear_momentum_DEL(momenta1[:, i], states1[:, i], states2[:, i], params_rbs[i], h))
     append!(DEL, rotational_momentum_DEL(momenta1[:, i], states1[:, i], states2[:, i], params_rbs[i], h))
   end
 
-  DEL += (h/2) * (vcat(forcing1...) + vcat(forcing2...)) # add forcing terms
-
+  DEL += (h / 2) * (vcat(forcing1...) + vcat(forcing2...)) # add forcing terms
+  DEL += h * Dc(states2, params_rbs)' * λ # add constraint terms 
   return DEL
 end
 
@@ -387,6 +387,7 @@ function complete_DEL_jacobian(
   states2::Matrix,
   forcing1::Matrix,
   forcing2::Matrix,
+  λ::Vector,
   params_rbs::Vector{<:NamedTuple},
   h::Float64)
   """
@@ -404,7 +405,7 @@ function complete_DEL_jacobian(
   # Returns
   - `complete_jacobian`: jacobian of the discrete Lagrangian of the system using midpoint integration
   """
-  vanilla_jacobian = FD.jacobian(s2 -> complete_DEL(momenta1, states1, s2, forcing1, forcing2, params_rbs, h), states2)
+  vanilla_jacobian = FD.jacobian(s2 -> complete_DEL(momenta1, states1, s2, forcing1, forcing2, λ, params_rbs, h), states2)
   Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)
   complete_jacobian = vanilla_jacobian * Ḡ
   return complete_jacobian
@@ -424,23 +425,85 @@ function attitude_jacobian_block_matrix(
   - `attitude_jacobian_matrix`: attitude jacobian block matrix
   """
   bodies = length(params_rbs)
-  attitude_jacobian_matrix = zeros(7 * bodies, 6 * bodies)
+  attitude_jacobian_matrix = zeros(eltype(states[1,1]), 7 * bodies, 6 * bodies)
   for i in 1:bodies
     # multiply rows of rotational DEL with attitude jacobian, the rest with identity
     attitude = states[4:7, i]
-    attitude_jacobian_matrix[7*i-6:7*i-4, 6*i-5:6*i-3] = I(3)
-    attitude_jacobian_matrix[7*i-3:7*i, 6*i-2:6*i] = G(attitude)
+    attitude_jacobian_matrix[7*i-6:7*i-4, 6*i-5:6*i-3] .= I(3)
+    attitude_jacobian_matrix[7*i-3:7*i, 6*i-2:6*i] .= G(attitude)
   end
   return attitude_jacobian_matrix
 end
 
 # TODO: add constraint terms
 
+# function integrator_step(
+#   momenta1::Matrix,
+#   states1::Matrix,
+#   forcing1::Matrix,
+#   forcing2::Matrix,
+#   params_rbs::Vector{<:NamedTuple},
+#   h::Float64;
+#   tol=1e-6,
+#   max_iters=100)
+#   """
+#   # Integrate the system by doing Newton root-finding on the discrete euler lagrange equations
+
+#   # Arguments
+#   - `momenta1`: Matrix containing momenta of the system at time t (each column is a rigidbody)
+#   - `state1`: Matrix containing states of the system at time t
+#   - `forcing1`: Matrix containing forcing (Fx,Fy,Fz,τx,τy,τz) terms at time t - h/2
+#   - `forcing2`: Matrix containing forcing terms at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+#   - `tol`: tolerance for convergence
+#   - `max_iters`: maximum number of iterations
+
+#   # Returns
+#   - `states2`: Matrix containing states of the system at time t + h
+#   - `momenta2`: Matrix containing momenta of the system at time t + h
+#   """
+#   states2 = states1 # initial guess
+#   bodies = length(params_rbs)
+
+#   for i in 1:max_iters
+#     residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
+
+#     if norm(residual) < tol
+#       momenta2 = 0 * momenta1 # initialize momenta2
+#       for j in 1:bodies
+#         # calculate momenta at t + h
+#         momenta2[:, j] .= [
+#           D2Ll(states1[:, j], states2[:, j], h, params_rbs[j]);
+#           # angular_momentum_update(states1[:, j], states2[:, j], h, params_rbs[j])]
+#           D2Lr(states1[:, j], states2[:, j], h, params_rbs[j])]
+#       end
+#       return states2, momenta2
+#     end
+
+#     DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
+#     Δstates = -real(DEL_jacobian) \ real(residual) # wrapping in real helped with linear solver issue ??
+#     Δstates = reshape(Δstates, 6, bodies)
+
+#     new_states = 0 * states2 # why do I need another variable to hold state2 ??
+#     for k in 1:bodies
+#       δ, ϕ = Δstates[1:3, k], Δstates[4:6, k] # linear and rotational Newton steps
+#       linear_state2 = states2[1:3, k] + δ
+#       rotation_state2 = L(states2[4:7, k]) * [sqrt(1 - ϕ' * ϕ); ϕ] # quaternion update using axis angle newton step
+#       new_states[:, k] .= [linear_state2; normalize(rotation_state2)]
+#     end
+
+#     states2 = new_states
+#   end
+#   throw("Integration did not converge")
+# end
+
 function integrator_step(
   momenta1::Matrix,
   states1::Matrix,
   forcing1::Matrix,
   forcing2::Matrix,
+  λ::Vector,
   params_rbs::Vector{<:NamedTuple},
   h::Float64;
   tol=1e-6,
@@ -466,23 +529,28 @@ function integrator_step(
   bodies = length(params_rbs)
 
   for i in 1:max_iters
-    residual = complete_DEL(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
-    
+    @show i
+    residual = [complete_DEL(momenta1, states1, states2, forcing1, forcing2, λ, params_rbs, h);
+      c(states2, params_rbs)]
+
     if norm(residual) < tol
       momenta2 = 0 * momenta1 # initialize momenta2
       for j in 1:bodies
         # calculate momenta at t + h
         momenta2[:, j] .= [
           D2Ll(states1[:, j], states2[:, j], h, params_rbs[j]);
-          # angular_momentum_update(states1[:, j], states2[:, j], h, params_rbs[j])]
           D2Lr(states1[:, j], states2[:, j], h, params_rbs[j])]
       end
       return states2, momenta2
     end
 
-    DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, params_rbs, h)
-    Δstates = -real(DEL_jacobian) \ real(residual) # wrapping in real helped with linear solver issue ??
-    Δstates = reshape(Δstates, 6, bodies)
+    DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, λ, params_rbs, h)
+
+    C2 = Dc(states1, params_rbs)
+    C3 = Dc(states2, params_rbs)
+
+    Δ = - [DEL_jacobian h*C2'; C3 zeros(size(C3, 1), size(C2, 1))] \ residual
+    Δstates, Δλ = Δ[1:6*bodies], Δ[6*bodies+1:end]
 
     new_states = 0 * states2 # why do I need another variable to hold state2 ??
     for k in 1:bodies
@@ -492,6 +560,7 @@ function integrator_step(
       new_states[:, k] .= [linear_state2; normalize(rotation_state2)]
     end
 
+    λ += Δλ
     states2 = new_states
   end
   throw("Integration did not converge")
