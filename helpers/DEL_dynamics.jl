@@ -317,13 +317,47 @@ end
 #   return DEL
 # end
 
+# function complete_DEL(
+#   momenta1::Matrix,
+#   states1::Matrix,
+#   states2::Matrix,
+#   forcing1::Matrix,
+#   forcing2::Matrix,
+#   λ::Vector,
+#   params_rbs::Vector{<:NamedTuple},
+#   h::Float64)
+#   """
+#   # Calculate discrete Lagrangian of the system
+
+#   # Arguments
+#   - `momenta1`: Matrix containing momenta of the system at time t (each column is a rigidbody)
+#   - `state1`: Matrix containing states of the system at time t
+#   - `state2`: Matrix containing states of the system at time t + h
+#   - `forcing1`: Matrix containing forcing (Fx,Fy,Fz,τx,τy,τz) terms at time t - h/2 
+#   - `forcing2`: Matrix containing forcing terms at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+
+#   # Returns
+#   - `DEL`: residual of the discrete Lagrangian of the system using midpoint integration
+#   """
+#   DEL = []
+#   for i in 1:size(momenta1, 2)
+#     append!(DEL, linear_momentum_DEL(momenta1[:, i], states1[:, i], states2[:, i], params_rbs[i], h))
+#     append!(DEL, rotational_momentum_DEL(momenta1[:, i], states1[:, i], states2[:, i], params_rbs[i], h))
+#   end
+
+#   DEL += (h / 2) * (vcat(forcing1...) + vcat(forcing2...)) # add forcing terms
+#   DEL += h * Dc(states2, params_rbs)' * λ # add constraint terms 
+#   return DEL
+# end
+
 function complete_DEL(
   momenta1::Matrix,
   states1::Matrix,
   states2::Matrix,
   forcing1::Matrix,
   forcing2::Matrix,
-  λ::Vector,
   params_rbs::Vector{<:NamedTuple},
   h::Float64)
   """
@@ -348,7 +382,6 @@ function complete_DEL(
   end
 
   DEL += (h / 2) * (vcat(forcing1...) + vcat(forcing2...)) # add forcing terms
-  DEL += h * Dc(states2, params_rbs)' * λ # add constraint terms 
   return DEL
 end
 
@@ -381,12 +414,43 @@ end
 #   return complete_jacobian
 # end
 
+# function complete_DEL_jacobian(
+#   momenta1::Matrix,
+#   states1::Matrix,
+#   states2::Matrix,
+#   forcing1::Matrix,
+#   forcing2::Matrix,
+#   λ::Vector,
+#   params_rbs::Vector{<:NamedTuple},
+#   h::Float64)
+#   """
+#   # Calculate jacobian of the discrete Lagrangian of the system
+
+#   # Arguments
+#   - `momenta1`: Matrix containing momenta of the system at time t (each column is a rigidbody)
+#   - `state1`: Matrix containing states of the system at time t
+#   - `state2`: Matrix containing states of the system at time t + h
+#   - `forcing1`: Matrix containing forcing (Fx,Fy,Fz,τx,τy,τz) terms at time t - h/2
+#   - `forcing2`: Matrix containing forcing terms at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+
+#   # Returns
+#   - `complete_jacobian`: jacobian of the discrete Lagrangian of the system using midpoint integration
+#   """
+#   vanilla_jacobian = FD.jacobian(s2 -> complete_DEL(momenta1, states1, s2, forcing1, forcing2, λ, params_rbs, h), states2)
+#   Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)
+#   complete_jacobian = vanilla_jacobian * Ḡ
+#   return complete_jacobian
+# end
+
 function complete_DEL_jacobian(
   momenta1::Matrix,
   states1::Matrix,
   states2::Matrix,
   forcing1::Matrix,
   forcing2::Matrix,
+  constraints::Function,
   λ::Vector,
   params_rbs::Vector{<:NamedTuple},
   h::Float64)
@@ -405,7 +469,8 @@ function complete_DEL_jacobian(
   # Returns
   - `complete_jacobian`: jacobian of the discrete Lagrangian of the system using midpoint integration
   """
-  vanilla_jacobian = FD.jacobian(s2 -> complete_DEL(momenta1, states1, s2, forcing1, forcing2, λ, params_rbs, h), states2)
+  DEL_cons(s2) = complete_DEL(momenta1, states1, s2, forcing1, forcing2, params_rbs, h) + h * Dc(constraints, s2, params_rbs)' * λ
+  vanilla_jacobian = FD.jacobian(DEL_cons, states2)
   Ḡ = attitude_jacobian_block_matrix(states2, params_rbs)
   complete_jacobian = vanilla_jacobian * Ḡ
   return complete_jacobian
@@ -498,15 +563,94 @@ end
 #   throw("Integration did not converge")
 # end
 
+# function integrator_step(
+#   momenta1::Matrix,
+#   states1::Matrix,
+#   forcing1::Matrix,
+#   forcing2::Matrix,
+#   constraints::Function,
+#   λ::Vector,
+#   params_rbs::Vector{<:NamedTuple},
+#   h::Float64;
+#   tol=1e-9,
+#   max_iters=100)
+#   """
+#   # Integrate the system by doing Newton root-finding on the discrete euler lagrange equations
+
+#   # Arguments
+#   - `momenta1`: Matrix containing momenta of the system at time t (each column is a rigidbody)
+#   - `state1`: Matrix containing states of the system at time t
+#   - `forcing1`: Matrix containing forcing (Fx,Fy,Fz,τx,τy,τz) terms at time t - h/2
+#   - `forcing2`: Matrix containing forcing terms at time t + h/2
+#   - `params_rb`: NamedTuple containing rigidbody parameters
+#   - `h`: time step
+#   - `tol`: tolerance for convergence
+#   - `max_iters`: maximum number of iterations
+
+#   # Returns
+#   - `states2`: Matrix containing states of the system at time t + h
+#   - `momenta2`: Matrix containing momenta of the system at time t + h
+#   """
+#   states2 = states1 # initial guess
+#   bodies = length(params_rbs)
+
+#   for _ in 1:max_iters
+#     comp_DEL = complete_DEL(momenta1, states1, states2, forcing1, forcing2,  params_rbs, h) 
+#     comp_DLE_cons = comp_DEL + h * Dc(constraints, states2, params_rbs)' * λ # add constraint terms 
+#     residual = [comp_DLE_cons; constraints(states2, params_rbs)]
+
+#     if norm(residual) < tol
+#       momenta2 = 0 * momenta1 # initialize momenta2
+#       for j in 1:bodies
+#         # calculate momenta at t + h
+#         momenta2[:, j] .= [
+#           D2Ll(states1[:, j], states2[:, j], h, params_rbs[j]);
+#           D2Lr(states1[:, j], states2[:, j], h, params_rbs[j])]
+#       end
+#       return states2, momenta2
+#     end
+
+#     DEL_jacobian = complete_DEL_jacobian(
+#       momenta1, 
+#       states1, 
+#       states2, 
+#       forcing1, 
+#       forcing2, 
+#       constraints, 
+#       λ, 
+#       params_rbs, 
+#       h)
+
+#     C2 = Dc(constraints, states1, params_rbs)
+#     C3 = Dc(constraints, states2, params_rbs)
+
+#     Δ = - [DEL_jacobian h*C2'; C3 zeros(size(C3, 1), size(C2, 1))] \ residual
+#     Δstates, Δλ = Δ[1:6*bodies], Δ[6*bodies+1:end]
+
+#     new_states = 0 * states2 # why do I need another variable to hold state2 ??
+#     for k in 1:bodies
+#       δ, ϕ = Δstates[1:3, k], Δstates[4:6, k] # linear and rotational Newton steps
+#       linear_state2 = states2[1:3, k] + δ
+#       rotation_state2 = L(states2[4:7, k]) * [sqrt(1 - ϕ' * ϕ); ϕ] # quaternion update using axis angle newton step
+#       new_states[:, k] .= [linear_state2; normalize(rotation_state2)]
+#     end
+
+#     λ += Δλ
+#     states2 = new_states
+#   end
+#   throw("Integration did not converge")
+# end
+
 function integrator_step(
   momenta1::Matrix,
   states1::Matrix,
   forcing1::Matrix,
   forcing2::Matrix,
+  constraints::Function,
   λ::Vector,
   params_rbs::Vector{<:NamedTuple},
   h::Float64;
-  tol=1e-6,
+  tol=1e-9,
   max_iters=100)
   """
   # Integrate the system by doing Newton root-finding on the discrete euler lagrange equations
@@ -528,10 +672,10 @@ function integrator_step(
   states2 = states1 # initial guess
   bodies = length(params_rbs)
 
-  for i in 1:max_iters
-    @show i
-    residual = [complete_DEL(momenta1, states1, states2, forcing1, forcing2, λ, params_rbs, h);
-      c(states2, params_rbs)]
+  for _ in 1:max_iters
+    comp_DEL = complete_DEL(momenta1, states1, states2, forcing1, forcing2,  params_rbs, h) 
+    comp_DLE_cons = comp_DEL + h * Dc(constraints, states2, params_rbs)' * λ # add constraint terms 
+    residual = [comp_DLE_cons; constraints(states2, params_rbs)]
 
     if norm(residual) < tol
       momenta2 = 0 * momenta1 # initialize momenta2
@@ -544,10 +688,19 @@ function integrator_step(
       return states2, momenta2
     end
 
-    DEL_jacobian = complete_DEL_jacobian(momenta1, states1, states2, forcing1, forcing2, λ, params_rbs, h)
+    DEL_jacobian = complete_DEL_jacobian(
+      momenta1, 
+      states1, 
+      states2, 
+      forcing1, 
+      forcing2, 
+      constraints, 
+      λ, 
+      params_rbs, 
+      h)
 
-    C2 = Dc(states1, params_rbs)
-    C3 = Dc(states2, params_rbs)
+    C2 = Dc(constraints, states1, params_rbs)
+    C3 = Dc(constraints, states2, params_rbs)
 
     Δ = - [DEL_jacobian h*C2'; C3 zeros(size(C3, 1), size(C2, 1))] \ residual
     Δstates, Δλ = Δ[1:6*bodies], Δ[6*bodies+1:end]
