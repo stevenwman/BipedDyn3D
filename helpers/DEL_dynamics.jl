@@ -702,8 +702,22 @@ function integrator_step(
     C2 = Dc(constraints, states1, params_rbs)
     C3 = Dc(constraints, states2, params_rbs)
 
-    Δ = - [DEL_jacobian h*C2'; C3 zeros(size(C3, 1), size(C2, 1))] \ residual
-    Δstates, Δλ = Δ[1:6*bodies], Δ[6*bodies+1:end]
+    kkt_lhs = [DEL_jacobian h*C2'; C3 zeros(size(C3, 1), size(C2, 1))]
+
+    if all(kkt_lhs[end,:] .== 0) && all(kkt_lhs[:,end] .== 0)
+      kkt_lhs = kkt_lhs[1:end-1, 1:end-1]
+      residual = residual[1:end-1]
+    end
+
+    Δ = - kkt_lhs \ residual
+
+    Δstates = Δ[1:6*bodies]
+
+    if length(Δ) == 6*bodies
+      Δλ = [0]
+    else
+      Δλ = Δ[6*bodies+1:end]
+    end
 
     new_states = 0 * states2 # why do I need another variable to hold state2 ??
     for k in 1:bodies

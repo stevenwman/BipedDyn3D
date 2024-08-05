@@ -30,5 +30,5 @@ end
 
 function quat2rot(Q::Vector)::Matrix
   # convert quaternion to rotation matrix
-  return H' * L(Q) * R(Q)' * H
+  return H'  * R(Q)' * L(Q) *  H
 end
